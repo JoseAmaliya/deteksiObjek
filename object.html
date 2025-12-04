@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Object & Color Detection</title>
+    <style>
+        body { font-family: Arial; text-align: center; background:#f2f2f2; }
+        video, canvas { border: 2px solid black; margin-top: 20px; }
+        #log { margin-top: 15px; font-size: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Deteksi Objek + Deteksi Warna</h1>
+    <video id="video" width="500" height="380" autoplay muted></video>
+    <canvas id="canvas" width="500" height="380"></canvas>
+
+    <div id="log">Menunggu kamera...</div>
+
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+
+    <!-- Model COCO-SSD -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const log = document.getElementById('log');
+
+        // --- DAFTAR NAMA WARNA (bukan RGB di output) ---
+        const namedColors = [
+            { name: "Merah", r: 255, g: 0, b: 0 },
+            { name: "Hijau", r: 0, g: 255, b: 0 },
+            { name: "Biru", r: 0, g: 0, b: 255 },
+            { name: "Kuning", r: 255, g: 255, b: 0 },
+            { name: "Magenta", r: 255, g: 0, b: 255 },
+            { name: "Cyan", r: 0, g: 255, b: 255 },
+            { name: "Hitam", r: 0, g: 0, b: 0 },
+            { name: "Putih", r: 255, g: 255, b: 255 },
+            { name: "Abu-abu", r: 128, g: 128, b: 128 },
+            { name: "Oranye", r: 255, g: 165, b: 0 },
+            { name: "Coklat", r: 150, g: 75, b: 0 }
+        ];
+
+        // Fungsi mencari warna terdekat
+        function getNearestColorName(r, g, b) {
+            let closest = null;
+            let lowestDiff = Infinity;
+
+            namedColors.forEach(color => {
+                let diff = Math.sqrt(
+                    Math.pow(r - color.r, 2) +
+                    Math.pow(g - color.g, 2) +
+                    Math.pow(b - color.b, 2)
+                );
+                if (diff < lowestDiff) {
+                    lowestDiff = diff;
+                    closest = color.name;
+                }
+            });
+
+            return closest;
+        }
+
+        // Aktifkan kamera
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+                video.onloadedmetadata = () => video.play();
+            });
+
+        // Load model COCO-SSD
+        cocoSsd.load().then(model => {
+            log.innerText = "Model siap. Mendeteksi...";
+            detectFrame(model);
+        });
+
+        function detectFrame(model) {
+            model.detect(video).then(predictions => {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                predictions.forEach(pred => {
+                    const [x, y, w, h] = pred.bbox;
+
+                    // Ambil sampel warna di tengah bounding box
+                    const sample = ctx.getImageData(x + w / 2, y + h / 2, 1, 1).data;
+                    const colorName = getNearestColorName(sample[0], sample[1], sample[2]);
+
+                    // Gambar kotak + label
+                    ctx.strokeStyle = "red";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, w, h);
+
+                    ctx.fillStyle = "red";
+                    ctx.font = "18px Arial";
+                    ctx.fillText(pred.class + " (" + colorName + ")", x, y > 20 ? y - 5 : y + 20);
+
+                    log.innerText = `Objek: ${pred.class} | Warna Terdeksi: ${colorName}`;
+                });
+
+                requestAnimationFrame(() => detectFrame(model));
+            });
+        }
+    </script>
+</body>
+</html>
