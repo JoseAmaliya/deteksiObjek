@@ -3,197 +3,155 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deteksi Objek Real-Time (Perbaikan)</title>
-    
+    <title>Deteksi Objek Real-Time TensorFlow.js</title>
+
+    <!-- TensorFlow.js dan Coco-SSD -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-    
+
     <style>
-        /* CSS untuk Penataan Tampilan */
         body {
             font-family: Arial, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             background-color: #f4f7f6;
-            color: #333;
             padding: 20px;
         }
-        
+
         #main-container {
-            /* Kontainer untuk menumpuk video dan canvas */
             position: relative;
             margin-top: 15px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             border-radius: 8px;
             overflow: hidden;
-            background-color: #000; /* Latar belakang hitam saat loading */
+            background: #000;
         }
-        
+
         #video-feed {
-            display: none; /* Sembunyikan elemen video, hanya gunakan sebagai input */
+            display: none; /* Video disembunyikan tapi tetap digunakan sebagai input */
         }
-        
+
         #canvas-overlay {
             display: block;
-            background-color: #000;
         }
-        
+
         #status {
             margin-bottom: 10px;
             font-size: 1.1em;
             font-weight: bold;
         }
-        
-        .error {
-            color: #D32F2F; /* Merah untuk error */
-        }
-        .loading {
-            color: #FFA000; /* Oranye untuk loading */
-        }
-        .ready {
-            color: #4CAF50; /* Hijau untuk ready */
-        }
+
+        .loading { color: #FFA000; }
+        .ready { color: #4CAF50; }
+        .error { color: #D32F2F; }
     </style>
 </head>
 <body>
 
     <h1>✅ Detektor Objek Real-Time TensorFlow.js</h1>
-    <p>Pastikan Anda menjalankan file ini dari **Server Lokal** (localhost) atau koneksi **HTTPS**.</p>
-    
+    <p>Pastikan file ini dijalankan dari <b>localhost</b> atau <b>HTTPS</b>.</p>
+
     <div id="status" class="loading">Memuat model...</div>
 
     <div id="main-container">
         <video id="video-feed" autoplay playsinline muted></video>
-        
         <canvas id="canvas-overlay"></canvas>
     </div>
 
     <script>
-        // --- VARIABEL GLOBAL ---
-        let model = undefined;
-        const video = document.getElementById('video-feed');
-        const canvas = document.getElementById('canvas-overlay');
-        const ctx = canvas.getContext('2d');
-        const statusElement = document.getElementById('status');
-        
-        // --- 1. SETUP KAMERA (Dengan Penanganan Error) ---
+        let model;
+        const video = document.getElementById("video-feed");
+        const canvas = document.getElementById("canvas-overlay");
+        const ctx = canvas.getContext("2d");
+        const statusEl = document.getElementById("status");
+
+        // --- SETUP Kamera ---
         async function setupCamera() {
             try {
-                // Memastikan dukungan browser
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    throw new Error("Browser Anda tidak mendukung akses kamera.");
-                }
-
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    'video': {
-                        facingMode: 'user' // Menggunakan kamera depan
-                    }
+                    video: { facingMode: "user" }
                 });
                 video.srcObject = stream;
-                
-                return new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        resolve(video);
-                    };
+
+                return new Promise(resolve => {
+                    video.onloadedmetadata = () => resolve(true);
                 });
 
-            } catch (error) {
-                statusElement.className = 'error';
-                if (error.name === "NotAllowedError" || error.name === "SecurityError") {
-                    statusElement.innerText = "Error: Akses kamera DITOLAK. Pastikan Anda memberikan izin dan menggunakan Server Lokal (localhost/HTTPS).";
-                } else {
-                    statusElement.innerText = `Error: Gagal mengakses kamera. ${error.message}`;
-                }
-                console.error("Kesalahan Kamera:", error);
-                return null;
-            }
-        }
-
-        // --- 2. MUAT MODEL COCO-SSD (Dengan Penanganan Error) ---
-        async function loadModel() {
-            statusElement.innerText = "Memuat model COCO-SSD...";
-            statusElement.className = 'loading';
-            try {
-                model = await cocoSsd.load();
-                return true;
-            } catch(error) {
-                statusElement.className = 'error';
-                statusElement.innerText = "Error: Gagal memuat model COCO-SSD. Periksa koneksi internet Anda.";
-                console.error("Kesalahan Model:", error);
+            } catch (err) {
+                statusEl.className = "error";
+                statusEl.innerText = "Akses kamera ditolak atau tidak tersedia.";
+                console.error(err);
                 return false;
             }
         }
 
-        // --- 3. LOOP DETEKSI FRAME ---
-        async function detectFrame() {
-            if (model && video.readyState === 4) { // Pastikan model dimuat dan video siap
-                // 1. Deteksi
-                const predictions = await model.detect(video);
-                
-                // 2. Gambar Ulang Canvas
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                // 3. Gambar Bounding Box
-                predictions.forEach(prediction => {
-                    const [x, y, width, height] = prediction.bbox;
-                    // Format label: Class (99%)
-                    const label = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
-                    
-                    // Style
-                    ctx.font = 'bold 16px Arial';
-                    
-                    // Gambar Kotak
-                    ctx.beginPath();
-                    ctx.rect(x, y, width, height);
-                    ctx.lineWidth = 3;
-                    ctx.strokeStyle = '#00FFFF'; // Cyan
-                    ctx.stroke();
-
-                    // Gambar Latar Belakang Label
-                    ctx.fillStyle = '#00FFFF'; 
-                    ctx.fillRect(x, y - 20, ctx.measureText(label).width + 10, 20);
-                    
-                    // Gambar Teks Label
-                    ctx.fillStyle = '#000000'; // Hitam
-                    ctx.fillText(label, x + 5, y - 5);
-                });
+        // --- Muat Model ---
+        async function loadModel() {
+            try {
+                model = await cocoSsd.load();
+                return true;
+            } catch (err) {
+                statusEl.className = "error";
+                statusEl.innerText = "Gagal memuat model COCO-SSD.";
+                console.error(err);
+                return false;
             }
-            
-            // Lanjutkan loop di frame berikutnya
-            requestAnimationFrame(detectFrame);
         }
 
-        // --- 4. FUNGSI UTAMA (MAIN) ---
+        // --- Loop Deteksi ---
+        async function detectLoop() {
+            if (!model || video.readyState !== 4) {
+                requestAnimationFrame(detectLoop);
+                return;
+            }
+
+            // Gambar video ke canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Deteksi
+            const preds = await model.detect(video);
+
+            // Gambar bounding box
+            preds.forEach(p => {
+                const [x, y, w, h] = p.bbox;
+                ctx.beginPath();
+                ctx.rect(x, y, w, h);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "#00FFFF";
+                ctx.stroke();
+
+                const label = `${p.class} (${Math.round(p.score * 100)}%)`;
+                ctx.fillStyle = "#00FFFF";
+                ctx.fillRect(x, y - 20, ctx.measureText(label).width + 10, 20);
+                ctx.fillStyle = "#000";
+                ctx.fillText(label, x + 5, y - 5);
+            });
+
+            requestAnimationFrame(detectLoop);
+        }
+
+        // --- MAIN ---
         async function main() {
-            // Coba memuat model
-            const modelLoaded = await loadModel();
-            if (!modelLoaded) return; // Hentikan jika gagal
+            const modelReady = await loadModel();
+            if (!modelReady) return;
 
-            // Coba setup kamera
-            const videoFeed = await setupCamera();
-            if (!videoFeed) return; // Hentikan jika gagal
-            
-            // Setelah semua siap
-            statusElement.innerText = "Model Siap! Mulai Gerakkan Objek.";
-            statusElement.className = 'ready';
+            statusEl.innerHTML = "Mengaktifkan kamera...";
+            const camReady = await setupCamera();
+            if (!camReady) return;
 
-            // Sinkronisasi ukuran canvas dengan video
-            canvas.width = videoFeed.videoWidth;
-            canvas.height = videoFeed.videoHeight;
-            
-            // Mulai deteksi setelah video siap
-            video.addEventListener('loadeddata', detectFrame);
-            // Panggil deteksi awal jika event 'loadeddata' sudah lewat
-            if (video.readyState === 4) {
-                 detectFrame();
-            }
+            // Set ukuran canvas
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            statusEl.className = "ready";
+            statusEl.innerText = "Model siap! Gerakkan objek di depan kamera.";
+
+            detectLoop();
         }
 
-        // Jalankan aplikasi
         main();
-        
     </script>
+
 </body>
 </html>
