@@ -1,24 +1,35 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title>Object & Color Detection</title>
     <style>
         body { font-family: Arial; text-align: center; background:#f2f2f2; }
-        video, canvas { border: 2px solid black; margin-top: 20px; }
+        #container {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        video, canvas {
+            border: 2px solid black;
+            width: 500px;
+            height: 380px;
+        }
         #log { margin-top: 15px; font-size: 20px; font-weight: bold; }
     </style>
 </head>
 <body>
     <h1>Deteksi Objek + Deteksi Warna</h1>
-    <video id="video" width="500" height="380" autoplay muted></video>
-    <canvas id="canvas" width="500" height="380"></canvas>
+    <div id="container">
+        <video id="video" autoplay muted></video>
+        <canvas id="canvas"></canvas>
+    </div>
 
     <div id="log">Menunggu kamera...</div>
 
     <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
-
     <!-- Model COCO-SSD -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
@@ -28,7 +39,7 @@
         const ctx = canvas.getContext('2d');
         const log = document.getElementById('log');
 
-        // --- DAFTAR NAMA WARNA (bukan RGB di output) ---
+        // Daftar warna dengan nilai RGB
         const namedColors = [
             { name: "Merah", r: 255, g: 0, b: 0 },
             { name: "Hijau", r: 0, g: 255, b: 0 },
@@ -43,7 +54,7 @@
             { name: "Coklat", r: 150, g: 75, b: 0 }
         ];
 
-        // Fungsi mencari warna terdekat
+        // Fungsi cari warna terdekat berdasarkan jarak Euclidean
         function getNearestColorName(r, g, b) {
             let closest = null;
             let lowestDiff = Infinity;
@@ -59,18 +70,26 @@
                     closest = color.name;
                 }
             });
-
             return closest;
         }
+
+        // Set ukuran canvas sama dengan video setelah video siap
+        video.addEventListener('loadeddata', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        });
 
         // Aktifkan kamera
         navigator.mediaDevices.getUserMedia({ video: true })
             .then(stream => {
                 video.srcObject = stream;
-                video.onloadedmetadata = () => video.play();
+                video.play();
+            })
+            .catch(err => {
+                log.innerText = "Gagal mengakses kamera: " + err.message;
             });
 
-        // Load model COCO-SSD
+        // Load model dan mulai deteksi
         cocoSsd.load().then(model => {
             log.innerText = "Model siap. Mendeteksi...";
             detectFrame(model);
@@ -78,27 +97,53 @@
 
         function detectFrame(model) {
             model.detect(video).then(predictions => {
+                // Gambar video ke canvas dulu
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                predictions.forEach(pred => {
-                    const [x, y, w, h] = pred.bbox;
+                if (predictions.length === 0) {
+                    log.innerText = "Tidak ada objek terdeteksi.";
+                } else {
+                    predictions.forEach(pred => {
+                        let [x, y, w, h] = pred.bbox;
 
-                    // Ambil sampel warna di tengah bounding box
-                    const sample = ctx.getImageData(x + w / 2, y + h / 2, 1, 1).data;
-                    const colorName = getNearestColorName(sample[0], sample[1], sample[2]);
+                        // Pastikan koordinat dalam integer dan tidak keluar canvas
+                        x = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+                        y = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+                        w = Math.min(canvas.width - x, Math.round(w));
+                        h = Math.min(canvas.height - y, Math.round(h));
 
-                    // Gambar kotak + label
-                    ctx.strokeStyle = "red";
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x, y, w, h);
+                        // Ambil sampel warna di tengah bounding box
+                        const sampleX = Math.min(canvas.width - 1, Math.max(0, x + Math.floor(w / 2)));
+                        const sampleY = Math.min(canvas.height - 1, Math.max(0, y + Math.floor(h / 2)));
 
-                    ctx.fillStyle = "red";
-                    ctx.font = "18px Arial";
-                    ctx.fillText(pred.class + " (" + colorName + ")", x, y > 20 ? y - 5 : y + 20);
+                        const sample = ctx.getImageData(sampleX, sampleY, 1, 1).data;
+                        const colorName = getNearestColorName(sample[0], sample[1], sample[2]);
 
-                    log.innerText = `Objek: ${pred.class} | Warna Terdeksi: ${colorName}`;
-                });
+                        // Gambar kotak dan label
+                        ctx.strokeStyle = "red";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, w, h);
 
+                        ctx.fillStyle = "red";
+                        ctx.font = "18px Arial";
+                        const text = `${pred.class} (${colorName})`;
+                        const textWidth = ctx.measureText(text).width;
+                        let textY = y > 20 ? y - 5 : y + 20;
+
+                        // Background kotak label
+                        ctx.fillRect(x - 1, textY - 18, textWidth + 6, 20);
+
+                        // Tulis label dengan warna putih agar terlihat
+                        ctx.fillStyle = "white";
+                        ctx.fillText(text, x + 2, textY + 2);
+
+                        log.innerText = `Objek: ${pred.class} | Warna Terdeteksi: ${colorName}`;
+                    });
+                }
+
+                requestAnimationFrame(() => detectFrame(model));
+            }).catch(err => {
+                log.innerText = "Error deteksi: " + err.message;
                 requestAnimationFrame(() => detectFrame(model));
             });
         }
