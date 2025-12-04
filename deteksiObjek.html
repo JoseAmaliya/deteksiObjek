@@ -1,157 +1,81 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deteksi Objek Real-Time TensorFlow.js</title>
+<meta charset="UTF-8">
+<title>Deteksi Objek</title>
 
-    <!-- TensorFlow.js dan Coco-SSD -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #f4f7f6;
-            padding: 20px;
-        }
-
-        #main-container {
-            position: relative;
-            margin-top: 15px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            border-radius: 8px;
-            overflow: hidden;
-            background: #000;
-        }
-
-        #video-feed {
-            display: none; /* Video disembunyikan tapi tetap digunakan sebagai input */
-        }
-
-        #canvas-overlay {
-            display: block;
-        }
-
-        #status {
-            margin-bottom: 10px;
-            font-size: 1.1em;
-            font-weight: bold;
-        }
-
-        .loading { color: #FFA000; }
-        .ready { color: #4CAF50; }
-        .error { color: #D32F2F; }
-    </style>
+<style>
+    body { text-align:center; background:#f3f3f3; }
+    #container { position:relative; display:inline-block; }
+    #canvas { position:absolute; left:0; top:0; }
+</style>
 </head>
 <body>
 
-    <h1>✅ Detektor Objek Real-Time TensorFlow.js</h1>
-    <p>Pastikan file ini dijalankan dari <b>localhost</b> atau <b>HTTPS</b>.</p>
+<h2>Deteksi Objek Real-Time</h2>
+<p id="status">Memuat...</p>
 
-    <div id="status" class="loading">Memuat model...</div>
+<div id="container">
+    <video id="video" width="640" height="480" autoplay playsinline muted style="background:black;"></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+</div>
 
-    <div id="main-container">
-        <video id="video-feed" autoplay playsinline muted></video>
-        <canvas id="canvas-overlay"></canvas>
-    </div>
+<script>
+async function startCamera() {
+    const video = document.getElementById("video");
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video:true });
+        video.srcObject = stream;
 
-    <script>
-        let model;
-        const video = document.getElementById("video-feed");
-        const canvas = document.getElementById("canvas-overlay");
-        const ctx = canvas.getContext("2d");
-        const statusEl = document.getElementById("status");
+        return new Promise(resolve => {
+            video.onloadedmetadata = () => resolve(video);
+        });
+    } catch (e) {
+        document.getElementById("status").innerText = "Akses kamera ditolak!";
+        console.log(e);
+        return null;
+    }
+}
 
-        // --- SETUP Kamera ---
-        async function setupCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "user" }
-                });
-                video.srcObject = stream;
+async function main() {
+    document.getElementById("status").innerText = "Memuat model...";
+    const model = await cocoSsd.load();
 
-                return new Promise(resolve => {
-                    video.onloadedmetadata = () => resolve(true);
-                });
+    document.getElementById("status").innerText = "Mengaktifkan kamera...";
+    const video = await startCamera();
+    if (!video) return;
 
-            } catch (err) {
-                statusEl.className = "error";
-                statusEl.innerText = "Akses kamera ditolak atau tidak tersedia.";
-                console.error(err);
-                return false;
-            }
-        }
+    document.getElementById("status").innerText = "Model siap!";
 
-        // --- Muat Model ---
-        async function loadModel() {
-            try {
-                model = await cocoSsd.load();
-                return true;
-            } catch (err) {
-                statusEl.className = "error";
-                statusEl.innerText = "Gagal memuat model COCO-SSD.";
-                console.error(err);
-                return false;
-            }
-        }
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
 
-        // --- Loop Deteksi ---
-        async function detectLoop() {
-            if (!model || video.readyState !== 4) {
-                requestAnimationFrame(detectLoop);
-                return;
-            }
+    async function detect() {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Gambar video ke canvas
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const predictions = await model.detect(video);
 
-            // Deteksi
-            const preds = await model.detect(video);
+        predictions.forEach(p => {
+            const [x, y, w, h] = p.bbox;
 
-            // Gambar bounding box
-            preds.forEach(p => {
-                const [x, y, w, h] = p.bbox;
-                ctx.beginPath();
-                ctx.rect(x, y, w, h);
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = "#00FFFF";
-                ctx.stroke();
+            ctx.strokeStyle = "cyan";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
 
-                const label = `${p.class} (${Math.round(p.score * 100)}%)`;
-                ctx.fillStyle = "#00FFFF";
-                ctx.fillRect(x, y - 20, ctx.measureText(label).width + 10, 20);
-                ctx.fillStyle = "#000";
-                ctx.fillText(label, x + 5, y - 5);
-            });
+            ctx.fillStyle = "cyan";
+            ctx.fillText(p.class + " (" + Math.round(p.score*100) + "%)", x, y - 4);
+        });
 
-            requestAnimationFrame(detectLoop);
-        }
+        requestAnimationFrame(detect);
+    }
 
-        // --- MAIN ---
-        async function main() {
-            const modelReady = await loadModel();
-            if (!modelReady) return;
+    detect();
+}
 
-            statusEl.innerHTML = "Mengaktifkan kamera...";
-            const camReady = await setupCamera();
-            if (!camReady) return;
-
-            // Set ukuran canvas
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-
-            statusEl.className = "ready";
-            statusEl.innerText = "Model siap! Gerakkan objek di depan kamera.";
-
-            detectLoop();
-        }
-
-        main();
-    </script>
-
+main();
+</script>
 </body>
 </html>
