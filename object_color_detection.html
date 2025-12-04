@@ -41,49 +41,47 @@ let ctx = canvas.getContext("2d");
 let info = document.getElementById("info");
 let model;
 
-// ===============================
-//  FUNGSI KLASIFIKASI WARNA
-// ===============================
-function classifyColor(r, g, b) {
-    // Hitung kecerahan
+// =========================
+// FUNGSI KLASIFIKASI WARNA
+// =========================
+function getColorName(r, g, b) {
     const brightness = (r + g + b) / 3;
 
+    // Hitam / Putih / Abu
     if (brightness < 40) return "Hitam";
     if (brightness > 200) return "Putih";
 
     // Warna dominan
     if (r > g && r > b) {
+        if (r > 150 && g < 80 && b < 80) return "Merah";
         if (g > b) return "Oranye";
-        if (r > 150 && g < 80) return "Merah";
-        return "Pink / Merah";
+        return "Pink";
     }
     if (g > r && g > b) {
-        if (g > 120 && r < 100 && b < 100) return "Hijau";
-        return "Kuning / Hijau";
+        if (g > 150 && r < 120) return "Hijau";
+        return "Kuning";
     }
     if (b > r && b > g) {
         if (b > 150) return "Biru";
-        return "Ungu / Biru";
+        return "Ungu";
     }
 
-    return "Tidak diketahui";
+    return "Tidak dikenal";
 }
 
-// ======================================
-// FUNGSI MENDAPATKAN WARNA DARI PIXEL
-// ======================================
-function detectColor(x, y) {
+// =========================
+// FUNGSI MENGAMBIL WARNA
+// =========================
+function detectColorName(x, y) {
     let pixel = ctx.getImageData(x, y, 1, 1).data;
     let r = pixel[0], g = pixel[1], b = pixel[2];
 
-    let colorName = classifyColor(r, g, b);
-
-    return { r, g, b, colorName };
+    return getColorName(r, g, b);
 }
 
-// ======================================
-//   MENJALANKAN WEBCAM
-// ======================================
+// =========================
+// MENJALANKAN WEBCAM
+// =========================
 async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
         video: true
@@ -94,48 +92,42 @@ async function startCamera() {
     });
 }
 
-// ======================================
-//       LOOP DETEKSI FRAME
-// ======================================
+// =========================
+// LOOP DETEKSI OBJEK
+// =========================
 async function detectFrame() {
     const predictions = await model.detect(video);
+
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     predictions.forEach(pred => {
         let [x, y, width, height] = pred.bbox;
 
-        // Gambar bounding box
+        // Gambar kotak objek
         ctx.strokeStyle = "lime";
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, width, height);
 
-        // Titik tengah objek
+        // Titik Tengah
         let cx = Math.floor(x + width / 2);
         let cy = Math.floor(y + height / 2);
 
-        let colorData = detectColor(cx, cy);
+        let colorName = detectColorName(cx, cy);
 
-        // Tampilkan data di layar
+        // Tampilkan label objek + warna
         ctx.fillStyle = "lime";
         ctx.font = "16px Arial";
-        ctx.fillText(
-            `${pred.class} | ${colorData.colorName} (RGB: ${colorData.r},${colorData.g},${colorData.b})`,
-            x,
-            y > 20 ? y - 5 : 20
-        );
+        ctx.fillText(`${pred.class} | ${colorName}`, x, y - 5);
 
-        info.innerHTML = `
-            Objek: <b>${pred.class}</b> <br>
-            Warna: <b>${colorData.colorName}</b> (RGB: ${colorData.r}, ${colorData.g}, ${colorData.b})
-        `;
+        info.innerHTML = `Objek: <b>${pred.class}</b> &nbsp; | &nbsp; Warna: <b>${colorName}</b>`;
     });
 
     requestAnimationFrame(detectFrame);
 }
 
-// ======================================
-//                MAIN
-// ======================================
+// =========================
+// MAIN
+// =========================
 async function main() {
     await startCamera();
     model = await cocoSsd.load();
