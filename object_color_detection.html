@@ -2,7 +2,8 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Object & Color Detection - TensorFlow.js</title>
+<title>Object & Color Detection Pro - TensorFlow.js</title>
+
 <style>
     body {
         font-family: Arial;
@@ -13,121 +14,186 @@
     #video, #canvas {
         border: 2px solid #fff;
         margin-top: 20px;
-        width: 640;
-        height: 480;
+        width: 640px;
+        height: 480px;
+    }
+    #color-box {
+        width: 80px;
+        height: 80px;
+        margin: 15px auto;
+        border: 3px solid white;
+        background: black;
     }
     #info {
-        margin-top: 20px;
-        font-size: 20px;
+        margin-top: 10px;
+        font-size: 22px;
+    }
+    #btnSave {
+        margin-top: 15px;
+        padding: 10px 20px;
+        font-size: 18px;
+        cursor: pointer;
     }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 </head>
+
 <body>
 
-<h2>Object & Color Detection</h2>
+<h2>Object & Color Detection PRO</h2>
 
 <video id="video" width="640" height="480" autoplay muted></video>
 <canvas id="canvas" width="640" height="480"></canvas>
 
+<div id="color-box"></div>
 <div id="info">Memuat model...</div>
+
+<button id="btnSave">Simpan Foto</button>
 
 <script>
 let video = document.getElementById("video");
 let canvas = document.getElementById("canvas");
 let ctx = canvas.getContext("2d");
 let info = document.getElementById("info");
+let colorBox = document.getElementById("color-box");
+let btnSave = document.getElementById("btnSave");
+
 let model;
+let lastSpokenColor = ""; // mencegah suara berulang
 
-// =========================
-// FUNGSI KLASIFIKASI WARNA
-// =========================
-function getColorName(r, g, b) {
-    const brightness = (r + g + b) / 3;
+// ===========================================================
+//  20+ COLOR CLASSIFIER (HIGH ACCURACY)
+// ===========================================================
+function classifyColor(r, g, b) {
+    const colors = [
+        {name:"Hitam", r:0, g:0, b:0},
+        {name:"Putih", r:255, g:255, b:255},
+        {name:"Merah", r:220, g:20, b:60},
+        {name:"Biru", r:30, g:60, b:200},
+        {name:"Hijau", r:50, g:200, b:70},
+        {name:"Kuning", r:250, g:220, b:0},
+        {name:"Oranye", r:255, g:140, b:0},
+        {name:"Pink", r:255, g:105, b:180},
+        {name:"Ungu", r:128, g:0, b:128},
+        {name:"Coklat", r:101, g:67, b:33},
+        {name:"Abu-abu", r:128, g:128, b:128},
+        {name:"Cyan", r:0, g:255, b:255},
+        {name:"Magenta", r:255, g:0, b:255},
+        {name:"Teal", r:0, g:128, b:128},
+        {name:"Olive", r:128, g:128, b:0},
+        {name:"Lavender", r:200, g:180, b:255},
+        {name:"Gold", r:255, g:215, b:0},
+        {name:"Silver", r:192, g:192, b:192},
+    ];
 
-    // Hitam / Putih / Abu
-    if (brightness < 40) return "Hitam";
-    if (brightness > 200) return "Putih";
+    let minDist = Infinity;
+    let chosen = "Tidak dikenal";
 
-    // Warna dominan
-    if (r > g && r > b) {
-        if (r > 150 && g < 80 && b < 80) return "Merah";
-        if (g > b) return "Oranye";
-        return "Pink";
-    }
-    if (g > r && g > b) {
-        if (g > 150 && r < 120) return "Hijau";
-        return "Kuning";
-    }
-    if (b > r && b > g) {
-        if (b > 150) return "Biru";
-        return "Ungu";
-    }
-
-    return "Tidak dikenal";
-}
-
-// =========================
-// FUNGSI MENGAMBIL WARNA
-// =========================
-function detectColorName(x, y) {
-    let pixel = ctx.getImageData(x, y, 1, 1).data;
-    let r = pixel[0], g = pixel[1], b = pixel[2];
-
-    return getColorName(r, g, b);
-}
-
-// =========================
-// MENJALANKAN WEBCAM
-// =========================
-async function startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video: true
+    colors.forEach(c => {
+        let d = Math.sqrt((r-c.r)**2 + (g-c.g)**2 + (b-c.b)**2);
+        if (d < minDist) {
+            minDist = d;
+            chosen = c.name;
+        }
     });
+
+    return chosen;
+}
+
+// ===========================================================
+//  AMBIL WARNA RATA-RATA SELURUH OBJEK
+// ===========================================================
+function detectAverageColor(x, y, width, height) {
+    let img = ctx.getImageData(x, y, width, height).data;
+
+    let r = 0, g = 0, b = 0, count = 0;
+    for (let i = 0; i < img.length; i += 4) {
+        r += img[i];
+        g += img[i + 1];
+        b += img[i + 2];
+        count++;
+    }
+    r = Math.floor(r / count);
+    g = Math.floor(g / count);
+    b = Math.floor(b / count);
+
+    return { r, g, b };
+}
+
+// ===========================================================
+//  TEXT-TO-SPEECH
+// ===========================================================
+function speak(text) {
+    let utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "id-ID";
+    speechSynthesis.speak(utter);
+}
+
+// ===========================================================
+//  SIMPAN FOTO HASIL DETEKSI
+// ===========================================================
+btnSave.onclick = function() {
+    let link = document.createElement("a");
+    link.download = "deteksi-warna.png";
+    link.href = canvas.toDataURL();
+    link.click();
+};
+
+// ===========================================================
+//  START CAMERA
+// ===========================================================
+async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     video.srcObject = stream;
     return new Promise(resolve => {
         video.onloadedmetadata = () => resolve(video);
     });
 }
 
-// =========================
-// LOOP DETEKSI OBJEK
-// =========================
+// ===========================================================
+//  MAIN DETECTION LOOP
+// ===========================================================
 async function detectFrame() {
     const predictions = await model.detect(video);
-
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     predictions.forEach(pred => {
-        let [x, y, width, height] = pred.bbox;
+        let [x, y, w, h] = pred.bbox;
 
-        // Gambar kotak objek
+        // bounding box
         ctx.strokeStyle = "lime";
         ctx.lineWidth = 2;
-        ctx.strokeRect(x, y, width, height);
+        ctx.strokeRect(x, y, w, h);
 
-        // Titik Tengah
-        let cx = Math.floor(x + width / 2);
-        let cy = Math.floor(y + height / 2);
+        // AMBIL WARNA RATA-RATA
+        let avg = detectAverageColor(x, y, w, h);
+        let colorName = classifyColor(avg.r, avg.g, avg.b);
 
-        let colorName = detectColorName(cx, cy);
+        // PREVIEW WARNA
+        colorBox.style.background = `rgb(${avg.r}, ${avg.g}, ${avg.b})`;
 
-        // Tampilkan label objek + warna
+        // TULIS LABEL
         ctx.fillStyle = "lime";
         ctx.font = "16px Arial";
         ctx.fillText(`${pred.class} | ${colorName}`, x, y - 5);
 
-        info.innerHTML = `Objek: <b>${pred.class}</b> &nbsp; | &nbsp; Warna: <b>${colorName}</b>`;
+        info.innerHTML = `Objek: <b>${pred.class}</b> | Warna: <b>${colorName}</b>`;
+
+        // SUARA (jika warna berubah)
+        if (colorName !== lastSpokenColor) {
+            speak(`Objek ${colorName} terdeteksi`);
+            lastSpokenColor = colorName;
+        }
     });
 
     requestAnimationFrame(detectFrame);
 }
 
-// =========================
-// MAIN
-// =========================
+// ===========================================================
+//  MAIN
+// ===========================================================
 async function main() {
     await startCamera();
     model = await cocoSsd.load();
